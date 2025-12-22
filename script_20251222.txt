@@ -1,0 +1,750 @@
+# Author: Dr. Elina Takola
+# Date: 22 December 2025
+# Publilcation reference: Manuscript in prep.
+
+#load("SOMA-Aug24.RData")
+
+sessionInfo()
+options(scipen = 999, digits = 2) # disable scientific notation and ask for 2 decimals
+library(metafor)
+library(plyr) # always load before dplyr
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)
+library(ggthemes)
+library(paletteer)
+library(ggpubr)
+
+#install.packages("pacman")
+#rm(list = ls())
+devtools::install_github("daniel1noble/orchaRd", ref = "main", force = TRUE)
+pacman::p_load(devtools, tidyverse, metafor, patchwork, R.rsp, orchaRd, emmeans, ape, phytools, flextable)
+
+###################################
+# Import data
+###################################
+
+# Correlation matrix of overlap between studies
+A <- read.csv(file.choose(), header = TRUE, row.names = 1, sep = ",") # Load the file "overlap_matrix_primary_percentage.csv". It contains the count of common primary studies for each pair of meta-analyses. Diagonal is based on the sample size of two meta-analyses that have almost 100% overlap.
+A1 <- data.matrix(A, rownames.force = TRUE) # matrix shoud be square, symmetric, numeric
+
+# Import dataset with pairs
+df <- read.csv(file.choose(), header = TRUE, sep = ",") # soma_data_final_boot.csv
+df3 = df
+df3 <- df3[df3$StudyID != "FEB23_06", ]
+
+
+# We also need the dataset with the effect sizes for Biodiversity
+biodiv <- read.csv(file.choose(), header = TRUE, sep = ",")  # soma_biodiv_final.csv
+biodiv3 = biodiv
+A1_biodiv_lrr <- A1[unique(biodiv$StudyID), unique(biodiv$StudyID)]
+
+
+# We will also need the dataset with yield effect sizes
+yield <- read.csv(file.choose(), header = TRUE, sep = ",") # soma_yield_final.csv
+yield3 = yield
+A1_yield_lrr <- A1[unique(yield$StudyID), unique(yield$StudyID)]
+
+
+###################################
+# 1)	What is the impact of sustainable farming practices on biodiversity and yield?
+###################################
+library(ggplot2)
+library(ggthemes)
+library(patchwork)
+
+df_lrr <- subset(df3, Biodiv_ESMetric %in% c("LRR","Percentage change", "RR"))
+A1_df_lrr <- A1[unique(df_lrr$StudyID), unique(df_lrr$StudyID)]
+
+p1 <- ggplot(data = df_lrr,
+       aes(x = Biodiv_ES_homog, y = Prod_ES_homog, color = Management_grouped)) +
+  annotate("rect", xmin = 0, xmax = 2, ymin = 0, ymax = 2,
+           fill = "#44af69", alpha = 0.15) +  # Q1: x>0, y>0
+  annotate("rect", xmin = -2, xmax = 0, ymin = 0, ymax = 2,
+           fill = "#fcab10", alpha = 0.15) +  # Q2: x<0, y>0
+  annotate("rect", xmin = -2, xmax = 0, ymin = -2, ymax = 0,
+           fill = "#f8333c", alpha = 0.15) +  # Q3: x<0, y<0
+  annotate("rect", xmin = 0, xmax = 2, ymin = -2, ymax = 0,
+           fill = "#fcab10", alpha = 0.15) +  # Q4: x>0, y<0
+  labs(y = "LRR(Yield)", x = "LRR(Biodiversity)") +
+  geom_errorbar(aes(ymin = Prod_ES_homog - Prod_SE3, ymax = Prod_ES_homog + Prod_SE3), 
+                width = 0.02, alpha = 0.5) +
+  geom_errorbarh(aes(xmin = Biodiv_ES_homog - Biodiv_SE3, xmax = Biodiv_ES_homog + Biodiv_SE3), 
+                 height = 0.02, alpha = 0.5) +
+  scale_color_manual(name = "Management", values = c(
+    "diversification"           = "#606400",      
+    "lower intensity"           = "#BC6C25", 
+    "reduced resource addition" = "#9CC414",           
+    "grazing pause"             = "#246236",
+    "organic"                   = "#5EA134")) + 
+  geom_point(size = 4, alpha = 0.99) +
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  coord_cartesian(ylim = c(-1.5, 1.5), xlim = c(-1.5, 1.5)) +
+  theme_few()
+
+reg <- lm(df_lrr$Prod_ES_homog ~ df_lrr$Biodiv_ES_homog)
+summary(reg)
+
+# Plot the linear regression
+p2 <- ggplot(data = df_lrr,
+       aes(x = Biodiv_ES_homog, y = Prod_ES_homog)) +
+  annotate("rect", xmin = 0, xmax = 2, ymin = 0, ymax = 2,
+           fill = "#44af69", alpha = 0.15) +  # Q1: x>0, y>0
+  annotate("rect", xmin = -2, xmax = 0, ymin = 0, ymax = 2,
+           fill = "#fcab10", alpha = 0.15) +  # Q2: x<0, y>0
+  annotate("rect", xmin = -2, xmax = 0, ymin = -2, ymax = 0,
+           fill = "#f8333c", alpha = 0.15) +  # Q3: x<0, y<0
+  annotate("rect", xmin = 0, xmax = 2, ymin = -2, ymax = 0,
+           fill = "#fcab10", alpha = 0.15) +  # Q4: x>0, y<0
+  geom_smooth(method = "lm", formula = y ~ x, color = "#246236",
+              fill  = "grey", linewidth = 1.2, se = TRUE) +
+  geom_point(alpha = 0.7) +
+  labs(y = "LRR(Yield)",
+       x = "LRR(Biodiversity)") +
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  coord_cartesian(xlim = c(-0.5, 1), ylim = c(-1, 1)) +
+  theme_few()
+
+
+# Plot the linear regression 
+p3 <- ggplot(data = df_lrr,
+       aes(x = Biodiv_ES_homog, y = Prod_ES_homog, color = Management_grouped)) +
+  annotate("rect",xmin = 0, xmax = 2, ymin = 0, ymax = 2,
+           fill = "#44af69", alpha = 0.15) +  # Q1: x>0, y>0
+  annotate("rect", xmin = -2, xmax = 0, ymin = 0, ymax = 2,
+           fill = "#fcab10", alpha = 0.15) +  # Q2: x<0, y>0
+  annotate("rect", xmin = -2, xmax = 0, ymin = -2, ymax = 0,
+           fill = "#f8333c", alpha = 0.15) +  # Q3: x<0, y<0
+  annotate("rect", xmin = 0, xmax = 2, ymin = -2, ymax = 0,
+           fill = "#fcab10", alpha = 0.15) +  # Q4: x>0, y<0
+  labs(y = "LRR(Yield)", x = "LRR(Biodiversity)") +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  scale_color_manual(values = c(
+    "diversification"           = "#606400",      
+    "lower intensity"           = "#BC6C25", 
+    "reduced resource addition" = "#9CC414",           
+    "grazing pause"             = "#246236",
+    "organic"                   = "#5EA134")) + 
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black", linewidth = 0.7) +
+  coord_cartesian(xlim = c(-0.5, 1), ylim = c(-1, 1)) +
+  theme_few() +
+  theme(legend.position = "none")
+
+combined <- p1 | ((p2 / p3) + plot_layout(heights = c(1, 1)))
+combined + plot_layout(widths = c(2, 1))
+
+
+
+
+# Overall meta-analyses for biodiversity and yield
+yield <- subset(yield, Prod_ESMetric %in% c("LRR","Percentage change", "RR"))
+biodiv <- subset(biodiv, Biodiv_ESMetric %in% c("LRR","Percentage change", "RR"))
+A1_yield_lrr <- A1[unique(yield$StudyID), unique(yield$StudyID)]
+A1_biodiv_lrr <- A1[unique(biodiv$StudyID), unique(biodiv$StudyID)]
+
+
+
+########################################
+# Plot random effects model estimates
+########################################
+# Random effects model
+meta_yield <- rma.mv(Prod_ES_homog, Prod_SE3, random = list(~1|StudyID),
+                     method = "REML", data = df_lrr)
+summary(meta_yield)
+predict(meta_yield)
+
+meta_bio <- rma.mv(Biodiv_ES_homog, Biodiv_SE3, random = list(~1|StudyID),
+                   method = "REML", data = df_lrr)
+summary(meta_bio)
+predict(meta_bio)
+
+meta_yield_results <- mod_results(meta_yield, mod = "1", at = NULL,  group = "StudyID")
+meta_bio_results <- mod_results(meta_bio, mod = "1", at = NULL,  group = "StudyID")
+meta_yield_plot <- orchard_plot(meta_yield, mod="1", group = "StudyID", xlab = "Log Response Ratio (LRR) Yield", 
+                                transfm = "none", twig.size = 0.5, trunk.size = 1) +
+  scale_fill_manual(values="#BC6C25") +
+  scale_color_manual(values="grey")
+
+meta_bio_plot <- orchard_plot(meta_bio, mod="1", group = "StudyID", xlab = "Log Response Ratio (LRR) Biodiversity", 
+                              transfm = "none", twig.size = 0.5, trunk.size = 1) +
+  scale_fill_manual(values="#5EA134") +
+  scale_color_manual(values="grey")
+meta_yield_plot/meta_bio_plot
+f1 <- funnel(meta_yield, col = "#BC6C25")
+f2 <- funnel(meta_bio, col = "#5EA134")
+
+meta_yield_plot / meta_bio_plot
+
+##############################
+# 2)	Which management practices lead to win-win outcomes for biodiversity and yield?
+##############################
+
+# Create a subset for each taxon
+invertebrates <- biodiv[biodiv$Taxonomic_group == "invertebrates",]
+plants <- biodiv[biodiv$Taxonomic_group == "plants",]
+fungi <- biodiv[biodiv$Taxonomic_group == "fungi",]
+#microbes <- biodiv[biodiv$Taxonomic_group == "microbes",]
+# Can't do a meta-regression for microbes because Management is only organic (1 level)
+vertebrates <- biodiv[biodiv$Taxonomic_group == "vertebrates",]
+
+# Subset the matrix of primary studies for each subset
+A1_invertebrates <- A1[unique(invertebrates$StudyID), unique(invertebrates$StudyID)]
+A1_plants <- A1[unique(plants$StudyID), unique(plants$StudyID)]
+A1_fungi <- A1[unique(fungi$StudyID), unique(fungi$StudyID)]
+A1_vertebrates <- A1[unique(vertebrates$StudyID), unique(vertebrates$StudyID)]
+# And then we will fit random effects-only meta-analytic models and meta-regressions separately for each taxon using management as a moderator
+
+# Overall meta-regression for all meta-analytic means and management practices
+metareg_bio <- rma.mv(yi = Biodiv_ES_homog, V = Biodiv_SE3, mods = ~ 0 + Management_grouped,
+                      random = list(~1|StudyID/ES_ID),
+                      method = "REML", R = list(StudyID = A1_biodiv_lrr),
+                      data = biodiv)
+summary(metareg_bio)
+
+#Invertebrates
+meta_invertebrates <- rma(yi = Biodiv_ES_homog, vi = Biodiv_SE3,
+                          #random = list(~1|StudyID, ~1|ES_ID),
+                          method = "REML", #R = list(StudyID = A1_invertebrates),
+                          data = invertebrates)
+summary(meta_invertebrates)
+predict(meta_invertebrates)
+
+metareg_invertebrates <- rma.mv(yi = Biodiv_ES_homog, V = Biodiv_SE3, mods = ~ 0 + Management_grouped,
+                                random = list(~1|StudyID, ~1|ES_ID),
+                                method = "REML", R = list(StudyID = A1_invertebrates),
+                                data = invertebrates)
+summary(metareg_invertebrates)
+
+#Plants
+meta_plants <- rma(yi = Biodiv_ES_homog, vi = Biodiv_SE3,
+                   #random = list(~1|StudyID, ~1|ES_ID),
+                   method = "REML", #R = list(StudyID = A1_plants),
+                   data = plants)
+summary(meta_plants)
+predict(meta_plants)
+
+metareg_plants <- rma.mv(yi = Biodiv_ES_homog, V = Biodiv_SE3, mods = ~ 0 + Management_grouped,
+                         random = list(~1|StudyID, ~1|ES_ID),
+                         method = "REML", R = list(StudyID = A1_plants),
+                         data = plants)
+summary(metareg_plants)
+
+#Fungi
+meta_fungi <- rma(yi = Biodiv_ES_homog, vi = Biodiv_SE3,
+                  #random = list(~1|StudyID, ~1|ES_ID),
+                  method = "REML", #R = list(StudyID = A1_fungi),
+                  data = fungi)
+summary(meta_fungi)
+predict(meta_fungi)
+
+metareg_fungi <- rma.mv(yi = Biodiv_ES_homog, V = Biodiv_SE3, mods = ~ 0 + Management_grouped,
+                        random = list(~1|StudyID, ~1|ES_ID),
+                        method = "REML", R = list(StudyID = A1_fungi),
+                        data = fungi)
+summary(metareg_fungi)
+
+#Vertebrates
+meta_vertebrates <- rma(yi = Biodiv_ES_homog, vi = Biodiv_SE3,
+                        #random = list(~1|StudyID, ~1|ES_ID),
+                        method = "REML", #R = list(StudyID = A1_vertebrates),
+                        data = vertebrates)
+summary(meta_vertebrates)
+predict(meta_vertebrates)
+
+metareg_vertebrates <- rma.mv(yi = Biodiv_ES_homog, V = Biodiv_SE3, mods = ~ 0 + Management_grouped,
+                              random = list(~1|StudyID, ~1|ES_ID),
+                              method = "REML", R = list(StudyID = A1_vertebrates),
+                              data = vertebrates)
+summary(metareg_vertebrates)
+##############################
+# Extract meta-regression model results
+##############################
+metareg_bio_results <- mod_results(metareg_bio, mod = "Management_grouped", at = NULL,  group = "StudyID")
+metareg_invertebrates_results <- mod_results(metareg_invertebrates, mod = "Management_grouped", at = NULL,  group = "StudyID")
+metareg_plants_results <- mod_results(metareg_plants, mod = "Management_grouped", at = NULL,  group = "StudyID")
+metareg_fungi_results <- mod_results(metareg_fungi, mod = "Management_grouped", at = NULL,  group = "StudyID")
+metareg_vertebrates_results <- mod_results(metareg_vertebrates, mod = "Management_grouped", at = NULL,  group = "StudyID")
+
+# Extract data and label with model name
+df_bio <- metareg_bio_results$mod_table %>% mutate(group = "All taxa")
+df_invertebrates <- metareg_invertebrates_results$mod_table %>% mutate(group = "Invertebrates")
+df_plants <- metareg_plants_results$mod_table %>% mutate(group = "Plants")
+df_fungi <- metareg_fungi_results$mod_table %>% mutate(group = "Fungi")
+df_vertebrates <- metareg_vertebrates_results$mod_table %>% mutate(group = "Vertebrates")
+
+# Combine into one data frame
+combined_data <- bind_rows(df_bio, df_invertebrates, df_plants, df_fungi, df_vertebrates)
+
+# Export to CSV
+write.csv(combined_data, "mods_biodiv_20250725.csv", row.names = FALSE)
+
+
+######################################
+#  3) Which taxa and crop systems are benefited by specific agricultural management practices?
+######################################
+crop <- yield[yield$CropType_grouped == "cropland",]
+agrof <- yield[yield$CropType_grouped == "(agro)forestry",]
+grass <- yield[yield$CropType_grouped == "grassland",]
+
+A1_crop <- A1[unique(crop$StudyID), unique(crop$StudyID)]
+A1_agrof <- A1[unique(agrof$StudyID), unique(agrof$StudyID)]
+A1_grass <- A1[unique(grass$StudyID), unique(grass$StudyID)]
+
+metareg_yield <- rma.mv(yi = Prod_ES_homog, V = Prod_SE3, mods = ~ 0 + Management_grouped,
+                        random = list(~1|StudyID, ~1|ES_ID),
+                        method = "REML", R = list(StudyID = A1_yield_lrr),
+                        data = yield)
+summary(metareg_yield)
+
+# Cropland
+metareg_crop <- rma.mv(yi = Prod_ES_homog, V = Prod_SE3, mods = ~ 0 + Management_grouped,
+                       random = list(~1|StudyID, ~1|ES_ID),
+                       method = "REML", R = list(StudyID = A1_crop),
+                       data = crop)
+summary(metareg_crop)
+
+meta_crop <- rma(yi = Prod_ES_homog, vi = Prod_SE3, 
+                 #random = list(~1|StudyID, ~1|ES_ID),
+                 method = "REML", #R = list(StudyID = A1_crop),
+                 data = crop)
+summary(meta_crop)
+predict(meta_crop)
+
+
+# Agroforestry
+meta_agrof <- rma(yi = Prod_ES_homog, vi = Prod_SE3,
+                  #random = list(~1|StudyID, ~1|ES_ID),
+                  method = "REML", #R = list(StudyID = A1_agrof),
+                  data = agrof)
+summary(meta_agrof)
+predict(meta_agrof)
+
+metareg_agrof <- rma.mv(yi = Prod_ES_homog, V = Prod_SE3, mods = ~ 0 + Management_grouped,
+                        random = list(~1|StudyID, ~1|ES_ID),
+                        method = "REML", R = list(StudyID = A1_agrof),
+                        data = agrof)
+summary(metareg_agrof)
+
+# Grassland
+meta_grass <- rma(yi = Prod_ES_homog, vi = Prod_SE3,
+                  #random = list(~1|StudyID, ~1|ES_ID),
+                  method = "REML", #R = list(StudyID = A1_grass),
+                  data = grass)
+summary(meta_grass)
+predict(meta_grass)
+
+metareg_grass <- rma.mv(yi = Prod_ES_homog, V = Prod_SE3, mods = ~ 0 + Management_grouped,
+                        random = list(~1|StudyID, ~1|ES_ID),
+                        method = "REML", R = list(StudyID = A1_grass),
+                        data = grass)
+summary(metareg_grass)
+
+##############################
+# Extract meta-regression model results
+##############################
+metareg_yield_results <- mod_results(metareg_yield, mod = "Management_grouped", at = NULL,  group = "StudyID")
+metareg_crop_results <- mod_results(metareg_crop, mod = "Management_grouped", at = NULL,  group = "StudyID")
+metareg_agrof_results <- mod_results(metareg_agrof, mod = "Management_grouped", at = NULL,  group = "StudyID")
+metareg_grass_results <- mod_results(metareg_grass, mod = "Management_grouped", at = NULL,  group = "StudyID")
+
+# Extract data and label with model name
+df_yield <- metareg_yield_results$mod_table %>% mutate(group = "All crop types")
+df_crop <- metareg_crop_results$mod_table %>% mutate(group = "Cropland")
+df_agrof <- metareg_agrof_results$mod_table %>% mutate(group = "Agroforestry scheme")
+df_grass <- metareg_grass_results$mod_table %>% mutate(group = "Grassland")
+
+# Combine into one data frame
+combined_data_yield <- bind_rows(df_yield, df_crop, df_agrof, df_grass)
+
+# Export to CSV
+write.csv(combined_data_yield, "mods_yield_20250725.csv", row.names = FALSE)
+
+######################################
+# Plot the moderators per subgroup
+######################################
+library(ggplot2)
+library(forcats)
+library(dplyr)
+
+mod_yield <- read.csv(file.choose(), header = TRUE, sep = ",") # Load file with moderators of yield
+
+# Set desired order for management practices (y-axis)
+all_practices <- c(
+  "Diversification",
+  "Grazing pause",
+  "Lower intensity",
+  "Organic",
+  "Reduced resource addition"
+)
+
+# Set desired order for groups (facet order)
+group_order <- c("All crop types", "Agroforestry scheme", "Cropland", "Grassland")
+
+mod_yield <- mod_yield %>%
+  mutate(
+    name = factor(name, levels = all_practices),
+    group = factor(group, levels = group_order)  # Reorder facet panels
+  )
+
+# Plot
+mod_yie_plot <- ggplot(mod_yield, aes(x = estimate, y = name)) +
+  geom_errorbar(aes(xmin = lowerCL, xmax = upperCL), width = 0.1) +
+  geom_point(aes(colour = name), size = 5) +
+  facet_wrap(~ group, nrow = 1, scales = "free_x") +  # Horizontally aligned
+  geom_vline(xintercept = 0, linetype = "solid", color = "black", linewidth = 0.7) +
+  labs(x = "Estimate", y = "Management practice") +
+  theme_minimal() +
+  scale_color_manual(name = "Management",
+                     values = c("Diversification"           = "#606400",      
+                                "Lower intensity"           = "#BC6C25", 
+                                "Reduced resource addition" = "#9CC414",           
+                                "Grazing pause"             = "#246236",
+                                "Organic"                   = "#5EA134")) +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 14),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    strip.text = element_text(size = 16),
+    panel.spacing = unit(0.8, "cm")
+  )
+
+mod_yie_plot
+
+
+# Now do the same for biodiversity
+mod_bio <- read.csv(file.choose(), header = TRUE, sep = ",") # Load file with moderators from biodiversity models
+
+# Set desired order for management practices
+all_practices <- c(
+  "Diversification",
+  "Grazing pause",
+  "Lower intensity",
+  "Organic",
+  "Reduced resource addition"
+)
+
+# Set desired facet order
+group_order <- c("All taxa", "Fungi", "Invertebrates", "Plants", "Vertebrates")
+
+# Apply factor levels to preserve full structure
+mod_bio <- mod_bio %>%
+  mutate(
+    name = factor(name, levels = all_practices),
+    group = factor(group, levels = group_order)
+  )
+
+# Plot
+mod_bio_plot <- ggplot(mod_bio, aes(x = estimate, y = name)) +
+  geom_errorbar(aes(xmin = lowerCL, xmax = upperCL), width = 0.1) +
+  geom_point(aes(colour = name), size = 5) +
+  facet_wrap(~ group, nrow = 1, scales = "free_x", drop = FALSE) +  # Preserve empty slots
+  geom_vline(xintercept = 0, linetype = "solid", color = "black", linewidth = 0.7) +
+  labs(x = "Estimate", y = "Management practice") +
+  theme_minimal() +
+  scale_color_manual(values = c("Diversification"           = "#606400",      
+                                "Lower intensity"           = "#BC6C25", 
+                                "Reduced resource addition" = "#9CC414",           
+                                "Grazing pause"             = "#246236",
+                                "Organic"                   = "#5EA134")) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    strip.text = element_text(size = 16),
+    panel.spacing = unit(0.8, "cm"))
+
+mod_bio_plot
+
+mod_bio_plot/mod_yie_plot
+
+
+
+#######################################
+# Meta-regression with yield as a response and biodiversity as a moderator
+#######################################
+metareg_bioyield <- rma.mv(yi = Prod_ES_homog, V = Prod_SE3, mods = ~ 0 + Biodiv_ES_homog,
+                           random = list(~1|StudyID, ~1|ES_ID),
+                           method = "REML", R = list(StudyID = A1_df_lrr),
+                           data = df_lrr)
+
+summary(metareg_bioyield)
+
+
+#######################################
+# Knowledge gaps
+#######################################
+
+library(pheatmap)
+
+# 1) Biodiversity ~ Management
+#    rows = Management_grouped, cols = Taxonomic_group
+heat1 <- table(biodiv$Management_grouped, biodiv$Taxonomic_group)
+p1 <- pheatmap(
+  heat1,
+  col = colorRampPalette(c("#FCEEEA", "#606400"))(100), 
+  main = "A) Sustainable farming impact on biodiversity",
+  cellwidth = 50, cellheight = 50, fontsize = 16, 
+  number_format = "%.0f", display_numbers = TRUE,
+  cluster_cols = FALSE, cluster_rows = FALSE,
+  angle_col = 90,
+  silent = TRUE
+)
+
+# 2) Yield ~ Management / Crop type
+#    rows = CropType_grouped, cols = Management_grouped
+heat2 <- table(yield$Management_grouped, yield$CropType_grouped)
+p2 <- pheatmap(
+  heat2,
+  col = colorRampPalette(c("aliceblue", "#9CC414"))(100), 
+  main = "B) Sustainable farming impact on yield",
+  cellwidth = 50, cellheight = 50, fontsize = 16, 
+  number_format = "%.0f", display_numbers = TRUE,
+  cluster_cols = FALSE, cluster_rows = FALSE,
+  angle_col = 90,
+  silent = TRUE
+)
+
+# 3) Taxa ~ Crop type
+#    rows = CropType, cols = Taxonomic_group
+heat3 <- table(biodiv$CropType, biodiv$Taxonomic_group)
+p3 <- pheatmap(
+  heat3,
+  col = colorRampPalette(c("#EFEBF5", "#246236"))(100), 
+  main = "C) Sustainable farming impact on specific taxa and crop types",
+  cellwidth = 50, cellheight = 50, fontsize = 16, 
+  number_format = "%.0f", display_numbers = TRUE,
+  cluster_cols = FALSE, cluster_rows = FALSE,
+  angle_col = 90,
+  silent = TRUE
+)
+
+# 4) Biodiversity groups ~ Management
+#    rows = AboveBelowGround, cols = Management_grouped
+heat4 <- table(df$Management_grouped, df$AboveBelowGround)
+p4 <- pheatmap(
+  heat4,
+  col = colorRampPalette(c("#F7F7FF", "#BC6C25"))(100), 
+  main = "D) Sustainable farming impact on biodiversity groups",
+  cellwidth = 50, cellheight = 50, fontsize = 16, 
+  number_format = "%.0f", display_numbers = TRUE,
+  cluster_cols = FALSE, cluster_rows = FALSE,
+  angle_col = 90,
+  silent = TRUE
+)
+
+
+# Combine in a 2×2 grid
+grid.arrange(
+  p1$gtable, p2$gtable,
+  p3$gtable, p4$gtable,
+  nrow = 2, ncol = 2
+)
+
+
+#####################################
+# Above- vs Below-ground
+#####################################
+# Common colour palette for Above/Below/Both
+abg_cols <- c("Below" = "#BC6C25",
+              "Both"  = "#606400",
+              "Above" = "#246236")
+
+abg <- ggplot(
+  data = df_lrr,
+  aes(x = Biodiv_ES_homog, y = Prod_ES_homog, color = AboveBelowGround, label = StudyID)
+) +
+  geom_point(aes(size = Prod_sample_size), alpha = 0.95) +
+  # y-errors now use Prod (y-axis)
+  geom_errorbar(aes(ymin = Prod_ES_homog - Prod_SE3,
+                    ymax = Prod_ES_homog + Prod_SE3),
+                width = 0.05, linewidth = 0.7) +
+  # x-errors now use Biodiv (x-axis)
+  geom_errorbarh(aes(xmin = Biodiv_ES_homog - Biodiv_SE3,
+                     xmax = Biodiv_ES_homog + Biodiv_SE3),
+                 height = 0.05, linewidth = 0.7) +
+  scale_color_manual(values = abg_cols, name = "Component") +
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  coord_cartesian(xlim = c(-1, 1), ylim = c(-1, 1)) +
+  labs(
+    x = "LRR(Biodiversity)",   # <– customize axis titles here
+    y = "LRR(Production)"
+  ) +
+  theme_few()
+
+abg
+
+sub_above <- subset(df_lrr, AboveBelowGround %in% "Above")
+above <- ggplot(
+  data = sub_above,
+  aes(x = Biodiv_ES_homog, y = Prod_ES_homog, color = AboveBelowGround, label = StudyID)
+) +
+  ggtitle("A) Above-ground productivity and biodiversity") +
+  geom_point(aes(size = Prod_sample_size), alpha = 0.95) +
+  geom_errorbar(aes(ymin = Prod_ES_homog - Prod_SE3,
+                    ymax = Prod_ES_homog + Prod_SE3),
+                width = 0.05, linewidth = 0.7) +
+  geom_errorbarh(aes(xmin = Biodiv_ES_homog - Biodiv_SE3,
+                     xmax = Biodiv_ES_homog + Biodiv_SE3),
+                 height = 0.05, linewidth = 0.7) +
+  scale_color_manual(values = abg_cols, guide = "none") +
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  coord_cartesian(xlim = c(-1, 1), ylim = c(-1, 1.5)) +
+  labs(
+    x = "LRR(Biodiversity)",
+    y = "LRR(Production)"
+  ) +
+  theme_few() +
+  theme(legend.position = "none")
+
+above
+
+
+sub_below <- subset(df_lrr, AboveBelowGround %in% "Below")
+below <- ggplot(
+  data = sub_below,
+  aes(x = Biodiv_ES_homog, y = Prod_ES_homog, color = AboveBelowGround, label = StudyID)
+) +
+  ggtitle("B) Below-ground productivity and biodiversity") +
+  geom_point(aes(size = Prod_sample_size), alpha = 0.95) +
+  geom_errorbar(aes(ymin = Prod_ES_homog - Prod_SE3,
+                    ymax = Prod_ES_homog + Prod_SE3),
+                width = 0.05, linewidth = 0.7) +
+  geom_errorbarh(aes(xmin = Biodiv_ES_homog - Biodiv_SE3,
+                     xmax = Biodiv_ES_homog + Biodiv_SE3),
+                 height = 0.05, linewidth = 0.7) +
+  scale_color_manual(values = abg_cols, guide = "none") +
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  coord_cartesian(xlim = c(-1, 1), ylim = c(-1, 1.5)) +
+  labs(
+    x = "LRR(Biodiversity)",
+    y = "LRR(Production)"
+  ) +
+  theme_few() +
+  theme(legend.position = "none")
+
+below
+
+above | below 
+
+######################################
+# Sensitivity analysis
+######################################
+
+# Outliers and influential studies
+inf_crop <- plot(influence(meta_crop))
+inf_agrof <- plot(influence(meta_agrof))
+inf_grass <- plot(influence(meta_grass))
+inf_invertebrates <- plot(influence(meta_invertebrates))
+inf_plants <- plot(influence(meta_plants))
+inf_fungi <- plot(influence(meta_fungi))
+inf_vertebrates <- plot(influence(meta_vertebrates))
+inf_yield <- plot(influence(meta_yield))
+inf_bio <- plot(influence(meta_bio))
+
+# Run again the random effect models without the influential studies
+meta_yield <- rma(Prod_ES_homog, Prod_SE3, random = list(~1|StudyID),
+                     method = "REML", data = df_lrr)
+meta_bio <- rma(Biodiv_ES_homog, Biodiv_SE3, random = list(~1|StudyID),
+                   method = "REML", data = df_lrr)
+meta_yield_results <- mod_results(meta_yield, mod = "1", at = NULL,  group = "StudyID")
+meta_bio_results <- mod_results(meta_bio, mod = "1", at = NULL,  group = "StudyID")
+meta_yield_plot <- orchard_plot(meta_yield, mod="1", group = "StudyID", xlab = "Log Response Ratio (LRR) Yield", 
+                                transfm = "none", twig.size = 0.5, trunk.size = 1) +
+  scale_fill_manual(values="#BC6C25") +
+  scale_color_manual(values="grey")
+meta_bio_plot <- orchard_plot(meta_bio, mod="1", group = "StudyID", xlab = "Log Response Ratio (LRR) Biodiversity", 
+                              transfm = "none", twig.size = 0.5, trunk.size = 1) +
+  scale_fill_manual(values="#5EA134") +
+  scale_color_manual(values="grey")
+meta_yield_plot / meta_bio_plot
+
+# Publication bias
+# Funnel plots
+funnel(meta_crop)
+funnel(meta_agrof)
+funnel(meta_grass)
+funnel(meta_invertebrates)
+funnel(meta_plants)
+funnel(meta_fungi)
+funnel(meta_vertebrates)
+funnel(meta_yield, col = "#BC6C25")
+funnel(meta_bio, col = "#5EA134")
+
+ 
+####################################
+# Heterogeneity analysis
+####################################
+
+# How much variation is explained by the moderators above?
+fix<-var(as.numeric(as.vector(meta_yield$b) %*% t(as.matrix(meta_yield$X))))
+R2m<- fix /(fix+sum(meta_yield$sigma2))
+100*R2m
+tau2(meta_yield)
+meta_yield$tau2
+# Heterogeneity (I^2) analysis for model with phylogeny - sensu Nakagawa & Santos (2012)
+within_study <- sum(1/meta_yield$vi) * (meta_yield$k-1) / (sum(1/meta_yield$vi)^2 - sum((1/meta_yield$vi)^2)) #s^2_m: variation within study = random error
+total_var <- sum(meta_yield$sigma2) + within_study #s^2_t = total variance
+sum(meta_yield$sigma2)/total_var # Total heterogeneity %
+meta_yield$sigma2[1] / total_var # Study level (between-study) variance %
+meta_yield$sigma2[2] / total_var # Effect size (within-study) variance %
+meta_yield$sigma2[3] / total_var # Phylogeny (between species) variance %
+meta_yield$sigma2[4] / total_var # Within species variance %
+
+#I² = 100% x (Q-df)/Q
+I2 <- (meta_yield$QE-meta_yield$QEdf)/meta_yield$QE
+meta_yield$vi
+##################################
+# Figure in Methods
+###################
+p_empty <- ggplot() +
+  # Quadrant backgrounds
+  annotate("rect", xmin = 0, xmax = 2, ymin = 0, ymax = 2,
+           fill = "#44af69", alpha = 0.15) +  # Q1
+  annotate("rect", xmin = -2, xmax = 0, ymin = 0, ymax = 2,
+           fill = "#fcab10", alpha = 0.15) +  # Q2
+  annotate("rect", xmin = -2, xmax = 0, ymin = -2, ymax = 0,
+           fill = "#f8333c", alpha = 0.15) +  # Q3
+  annotate("rect", xmin = 0, xmax = 2, ymin = -2, ymax = 0,
+           fill = "#fcab10", alpha = 0.15) +  # Q4
+  
+  # Axis labels
+  labs(y = "LRR(Yield)", x = "LRR(Biodiversity)") +
+  
+  # Zero lines
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "black", linewidth = 0.7) +
+  
+  # Limits
+  coord_cartesian(ylim = c(-1.5, 1.5), xlim = c(-1.5, 1.5)) +
+  
+  theme_few() +
+  theme(legend.position = "none")
+
+p_empty
+###################
